@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>👶 Baby Sound Translator</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --text: #222;
+      --primary: #4a90e2;
+      --danger: #e74c3c;
+      --input: #f0f0f0;
+    }
+
+    body.dark {
+      --bg: #121212;
+      --text: #eee;
+      --primary: #66b2ff;
+      --danger: #ff5e57;
+      --input: #1e1e1e;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: Arial, sans-serif;
+      padding: 2rem;
+      text-align: center;
+      transition: 0.3s;
+    }
+
+    h1, h3 { margin-bottom: 1rem; }
+
+    button {
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      padding: 10px 16px;
+      margin: 5px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 1em;
+      transition: 0.2s;
+    }
+
+    button:hover {
+      filter: brightness(0.9);
+    }
+
+    .danger {
+      background: var(--danger);
+    }
+
+    input[type="text"], input[type="file"] {
+      padding: 10px;
+      width: 70%;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      margin-bottom: 10px;
+      background: var(--input);
+      color: var(--text);
+    }
+
+    #translated {
+      margin-top: 1rem;
+      font-size: 1.2em;
+      padding: 15px;
+      background: var(--danger);
+      color: white;
+      border-radius: 10px;
+      display: none;
+      max-width: 400px;
+      margin-inline: auto;
+    }
+
+    #history {
+      margin-top: 2rem;
+      max-width: 600px;
+      margin-inline: auto;
+      text-align: left;
+    }
+
+    #themeToggle {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+    }
+
+    audio {
+      width: 100%;
+      margin-top: 10px;
+    }
+
+    @media(max-width: 600px) {
+      input[type="text"] { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <button id="themeToggle">🌙 Dark Mode</button>
+  <h1>👶 Baby Sound Translator</h1>
+
+  <button id="startBtn">🎤 Start Listening</button>
+  <button id="stopBtn" style="display:none;">🛑 Stop</button>
+  <p id="status">Waiting for sound...</p>
+  <div id="translated"></div>
+
+  <h3>Train a Sound</h3>
+  <input type="text" id="soundInput" placeholder="Describe the baby sound (e.g. Neh - Hungry)" />
+  <button onclick="trainSound()">➕ Save Sound</button>
+  <button id="clearHistory">🧹 Clear</button>
+  <button id="exportData">⬇️ Export</button>
+  <input type="file" id="importFile" accept=".json" />
+  <button id="importData">⬆️ Import</button>
+
+  <h3>Record Baby Sound</h3>
+  <button id="recordBtn">⏺️ Start Recording</button>
+  <button id="stopRecordBtn" style="display:none;">⏹️ Stop Recording</button>
+  <div id="recordingsList"></div>
+
+  <div id="history">
+    <h3>Trained Sounds</h3>
+    <ul id="historyList"></ul>
+  </div>
+
+  <script>
+    const themeToggle = document.getElementById('themeToggle');
+    const body = document.body;
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const status = document.getElementById('status');
+    const translated = document.getElementById('translated');
+    const historyList = document.getElementById('historyList');
+    const clearHistory = document.getElementById('clearHistory');
+    const recordingsList = document.getElementById('recordingsList');
+    const recordBtn = document.getElementById('recordBtn');
+    const stopRecordBtn = document.getElementById('stopRecordBtn');
+    const exportData = document.getElementById('exportData');
+    const importData = document.getElementById('importData');
+    const importFile = document.getElementById('importFile');
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = SpeechRecognition ? new SpeechRecognition() : null;
+    let isListening = false;
+
+    const translations = {
+      "neh": "I'm hungry!",
+      "owh": "I'm sleepy.",
+      "eair": "I have low gas.",
+      "heh": "I'm uncomfortable."
+    };
+
+    themeToggle.addEventListener('click', () => {
+      body.classList.toggle('dark');
+      themeToggle.textContent = body.classList.contains('dark') ? '☀️ Light Mode' : '🌙 Dark Mode';
+    });
+
+    function updateHistoryUI() {
+      historyList.innerHTML = '';
+      const data = JSON.parse(localStorage.getItem('trainedSounds') || '[]');
+      data.forEach(item => {
+        const li = document.createElement('li');
+        li.textContent = item;
+        historyList.appendChild(li);
+      });
+    }
+
+    function trainSound() {
+      const input = document.getElementById('soundInput');
+      const soundText = input.value.trim();
+      if (!soundText) return alert("Please enter a sound description!");
+      const data = JSON.parse(localStorage.getItem('trainedSounds') || '[]');
+      data.push(soundText);
+      localStorage.setItem('trainedSounds', JSON.stringify(data));
+      updateHistoryUI();
+      input.value = "";
+    }
+
+    clearHistory.addEventListener('click', () => {
+      localStorage.removeItem('trainedSounds');
+      updateHistoryUI();
+    });
+
+    exportData.addEventListener('click', () => {
+      const data = localStorage.getItem('trainedSounds') || '[]';
+      const blob = new Blob([data], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = "trained_sounds.json";
+      a.click();
+    });
+
+    importData.addEventListener('click', () => {
+      const file = importFile.files[0];
+      if (!file) return alert("Please choose a JSON file first.");
+      const reader = new FileReader();
+      reader.onload = e => {
+        try {
+          const imported = JSON.parse(e.target.result);
+          if (!Array.isArray(imported)) throw new Error("Invalid file format");
+          const existing = JSON.parse(localStorage.getItem('trainedSounds') || '[]');
+          const merged = Array.from(new Set([...existing, ...imported]));
+          localStorage.setItem('trainedSounds', JSON.stringify(merged));
+          updateHistoryUI();
+          alert("Import successful!");
+        } catch (err) {
+          alert("Import failed: Invalid file.");
+        }
+      };
+      reader.readAsText(file);
+    });
+
+    if (recognition) {
+      recognition.continuous = false;
+      recognition.lang = 'en-US';
+      recognition.interimResults = false;
+
+      recognition.onstart = () => {
+        status.textContent = '🎧 Listening for baby sounds...';
+        startBtn.style.display = 'none';
+        stopBtn.style.display = 'inline-block';
+      };
+
+      recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript.toLowerCase().trim();
+        status.textContent = `Heard: "${transcript}"`;
+        translateSound(transcript);
+      };
+
+      recognition.onerror = (event) => {
+        status.textContent = `❌ Error: ${event.error}`;
+      };
+
+      recognition.onend = () => {
+        if (isListening) recognition.start();
+      };
+    } else {
+      alert("Speech Recognition is not supported in this browser.");
+    }
+
+    startBtn.addEventListener('click', () => {
+      if (recognition) {
+        isListening = true;
+        recognition.start();
+      }
+    });
+
+    stopBtn.addEventListener('click', () => {
+      if (recognition) {
+        isListening = false;
+        recognition.stop();
+        status.textContent = '🛑 Stopped listening.';
+        startBtn.style.display = 'inline-block';
+        stopBtn.style.display = 'none';
+      }
+    });
+
+    function translateSound(transcript) {
+      let message = "Unrecognized sound";
+      for (let key in translations) {
+        if (transcript.includes(key)) {
+          message = translations[key];
+          break;
+        }
+      }
+      translated.textContent = `Translation: ${message}`;
+      translated.style.display = 'block';
+    }
+
+    // Audio Recording
+    let mediaRecorder;
+    let audioChunks = [];
+
+    recordBtn.addEventListener('click', async () => {
+      if (!navigator.mediaDevices) {
+        return alert("Media devices not supported.");
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorder = new MediaRecorder(stream);
+
+      mediaRecorder.ondataavailable = event => {
+        audioChunks.push(event.data);
+      };
+
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(audioChunks, { type: 'audio/mp3' });
+        const url = URL.createObjectURL(blob);
+        const audio = document.createElement('audio');
+        audio.controls = true;
+        audio.src = url;
+        recordingsList.appendChild(audio);
+        audioChunks = [];
+      };
+
+      mediaRecorder.start();
+      recordBtn.style.display = 'none';
+      stopRecordBtn.style.display = 'inline-block';
+    });
+
+    stopRecordBtn.addEventListener('click', () => {
+      if (mediaRecorder && mediaRecorder.state === "recording") {
+        mediaRecorder.stop();
+        recordBtn.style.display = 'inline-block';
+        stopRecordBtn.style.display = 'none';
+      }
+    });
+
+    updateHistoryUI();
+  </script>
+</body>
+</html>
